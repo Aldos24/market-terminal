@@ -6,6 +6,7 @@ yields), its size in sigmas, 1W/1M/YTD changes, plus the list of >=2 sigma moves
 
   python summary.py                       # uses ./data
   python summary.py --raw                 # downloads from GitHub
+  python summary.py --asof 2026-11-13     # numbers as of a past session
 """
 from __future__ import annotations
 
@@ -66,10 +67,14 @@ def metrics(t: list[str], c: list[float], yld: bool) -> dict | None:
 
 def main() -> None:
     raw = "--raw" in sys.argv
+    asof = sys.argv[sys.argv.index("--asof") + 1] if "--asof" in sys.argv else None
     prices, meta = load("prices.json", raw), load("assets.json", raw)
-    out = {"prices_updated": prices.get("updated"), "assets": {}, "unusual": []}
+    out = {"prices_updated": prices.get("updated"), "asof": asof, "assets": {}, "unusual": []}
     for a in meta:
         s = prices["assets"].get(a["key"])
+        if s and asof:
+            n = last_le(s["t"], asof) + 1
+            s = {"t": s["t"][:n], "c": s["c"][:n]}
         m = metrics(s["t"], s["c"], a["kind"] == "yield") if s else None
         if m:
             m["name"], m["base"] = a["name"], a["base"] == "1"
