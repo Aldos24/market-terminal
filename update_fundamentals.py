@@ -23,7 +23,12 @@ ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "data" / "fundamentals.json"
 FINNHUB = os.environ.get("FINNHUB_KEY", "").strip()
 FMP = os.environ.get("FMP_KEY", "").strip()
-SEC_UA = {"User-Agent": "market-terminal research (github.com/Aldos24/market-terminal) aldos24@users.noreply.github.com"}
+SEC_UA = {"User-Agent": "Aldiyar Berik Aldos24@users.noreply.github.com", "Accept-Encoding": "gzip, deflate"}
+# fallback CIKs; each is verified against the tickers listed in SEC submissions
+CIK_FALLBACK = {"NVDA": 1045810, "AVGO": 1730168, "AMD": 2488, "TSM": 1046179, "ASML": 937966, "MU": 723125,
+    "MSFT": 789019, "GOOGL": 1652044, "AMZN": 1018724, "META": 1326801, "ORCL": 1341439, "AAPL": 320193,
+    "ANET": 1596532, "ETN": 1551182, "VRT": 1674101, "CEG": 1868275, "NEE": 753308, "PLTR": 1321655,
+    "FRHC": 924805, "MLI": 89439, "LII": 1069202, "WTS": 795403}
 
 # terminal key -> exchange ticker (stocks only)
 STOCKS = {
@@ -54,7 +59,9 @@ def get(url: str, **kw):
 # ---------------- SEC EDGAR ----------------
 def sec_ciks() -> dict[str, int]:
     j = get("https://www.sec.gov/files/company_tickers.json", headers=SEC_UA) or {}
-    return {v["ticker"].upper(): int(v["cik_str"]) for v in j.values()}
+    m = {v["ticker"].upper(): int(v["cik_str"]) for v in j.values()}
+    print("  SEC ticker map:", len(m))
+    return {**CIK_FALLBACK, **m}
 
 
 def quarterly(facts: dict, tags: list[str], unit: str) -> list[dict]:
@@ -84,6 +91,8 @@ def sec_block(cik: int) -> dict:
     subs = get(f"https://data.sec.gov/submissions/CIK{cik:010d}.json", headers=SEC_UA)
     time.sleep(0.15)
     if subs:
+        out["sec_tickers"] = subs.get("tickers", [])
+        out["name"] = subs.get("name")
         r = subs.get("filings", {}).get("recent", {})
         fl = []
         for form, d, acc, doc in zip(r.get("form", []), r.get("filingDate", []),
@@ -121,6 +130,10 @@ def main() -> None:
         cik = ciks.get(t)
         if cik:
             b = sec_block(cik)
+            if b.get("sec_tickers") is not None and t not in b["sec_tickers"]:
+                print(f"  {k}: CIK {cik} is {b.get('name')}, skipped")
+                continue
+            b.pop("sec_tickers", None)
             if b:
                 companies[k].update(b)
                 status["sec"] += 1
