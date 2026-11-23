@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-23T13:06:12Z",
+ "updated": "2026-11-23T14:07:59Z",
  "ok": 55,
  "total": 57,
  "missing": [
@@ -12,12 +12,12 @@
  ],
  "last_date": {
   "US2Y": "2026-11-20",
-  "US10Y": "2026-11-20",
+  "US10Y": "2026-11-23",
   "BUND2Y": "2026-11-23",
   "DXY": "2026-11-23",
   "EURUSD": "2026-11-23",
   "USDJPY": "2026-11-23",
-  "USDKZT": "2026-11-23",
+  "USDKZT": "2026-11-24",
   "USDRUB": "2026-11-23",
   "USDCNH": "2026-11-23",
   "NBKRATE": "2026-11-23",
@@ -69,7 +69,7 @@
  },
  "source": {
   "US2Y": "treasury",
-  "US10Y": "treasury",
+  "US10Y": "yahoo:^TNX",
   "BUND2Y": "bundesbank_2y",
   "DXY": "yahoo:DX-Y.NYB",
   "EURUSD": "yahoo:EURUSD=X",
