@@ -1,28 +1,26 @@
 {
- "updated": "2026-11-23T12:42:54Z",
- "ok": 53,
+ "updated": "2026-11-23T13:06:12Z",
+ "ok": 55,
  "total": 57,
  "missing": [
-  "BUND2Y",
   "TONIA",
-  "NBKRATE",
   "KASE"
  ],
  "no_source": [
-  "BUND2Y",
   "TONIA",
-  "NBKRATE",
   "KASE"
  ],
  "last_date": {
   "US2Y": "2026-11-20",
   "US10Y": "2026-11-20",
+  "BUND2Y": "2026-11-23",
   "DXY": "2026-11-23",
   "EURUSD": "2026-11-23",
   "USDJPY": "2026-11-23",
   "USDKZT": "2026-11-23",
   "USDRUB": "2026-11-23",
   "USDCNH": "2026-11-23",
+  "NBKRATE": "2026-11-23",
   "BRENT": "2026-11-23",
   "GOLD": "2026-11-23",
   "SPX": "2026-11-20",
@@ -72,12 +70,14 @@
  "source": {
   "US2Y": "treasury",
   "US10Y": "treasury",
+  "BUND2Y": "bundesbank_2y",
   "DXY": "yahoo:DX-Y.NYB",
   "EURUSD": "yahoo:EURUSD=X",
   "USDJPY": "yahoo:JPY=X",
-  "USDKZT": "yahoo:KZT=X",
+  "USDKZT": "nbk_usd",
   "USDRUB": "yahoo:RUB=X",
   "USDCNH": "yahoo:CNY=X",
+  "NBKRATE": "nbk_base",
   "BRENT": "yahoo:BZ=F",
   "GOLD": "yahoo:GC=F",
   "SPX": "yahoo:^GSPC",
