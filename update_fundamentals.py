@@ -40,8 +40,8 @@ STOCKS = {
 REV_TAGS = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"]
 
 
-def get(url: str, **kw):
-    for i in range(3):
+def get(url: str, tries: int = 3, **kw):
+    for i in range(tries):
         try:
             r = requests.get(url, timeout=30, **kw)
             if r.status_code == 429:
@@ -50,7 +50,7 @@ def get(url: str, **kw):
             r.raise_for_status()
             return r.json()
         except Exception as e:  # noqa: BLE001
-            if i == 2:
+            if i == tries - 1:
                 print(f"  {url.split('?')[0][-70:]}: {e}")
             time.sleep(1.5)
     return None
@@ -58,7 +58,7 @@ def get(url: str, **kw):
 
 # ---------------- SEC EDGAR ----------------
 def sec_ciks() -> dict[str, int]:
-    j = get("https://www.sec.gov/files/company_tickers.json", headers=SEC_UA) or {}
+    j = get("https://www.sec.gov/files/company_tickers.json", tries=1, headers=SEC_UA) or {}
     m = {v["ticker"].upper(): int(v["cik_str"]) for v in j.values()}
     print("  SEC ticker map:", len(m))
     return {**CIK_FALLBACK, **m}
@@ -126,7 +126,11 @@ def main() -> None:
     status = {"sec": 0, "finnhub": 0, "fmp": 0}
 
     ciks = sec_ciks()
-    for k, t in STOCKS.items():
+    # SEC blocks many cloud IPs (incl. GitHub runners): probe once, skip if refused
+    probe = get(f"https://data.sec.gov/submissions/CIK{ciks['MLI']:010d}.json", tries=1, headers=SEC_UA)
+    if not probe:
+        print("  SEC unreachable from this runner, using FMP/Finnhub only")
+    for k, t in (STOCKS.items() if probe else []):
         cik = ciks.get(t)
         if cik:
             b = sec_block(cik)
