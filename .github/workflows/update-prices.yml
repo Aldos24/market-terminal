@@ -28,6 +28,13 @@ jobs:
       - name: Headlines
         run: python update_news.py
         continue-on-error: true
+      - name: Fundamentals (SEC, Finnhub, FMP)
+        run: python update_fundamentals.py
+        continue-on-error: true
+        env:
+          FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
+          FMP_KEY: ${{ secrets.FMP_KEY }}
+          FRED_KEY: ${{ secrets.FRED_KEY }}
       - name: Commit data
         run: |
           git config user.name "market-bot"
