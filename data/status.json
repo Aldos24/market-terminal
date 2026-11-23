@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-23T20:45:41Z",
+ "updated": "2026-11-23T21:05:57Z",
  "ok": 55,
  "total": 57,
  "missing": [
@@ -11,7 +11,7 @@
   "KASE"
  ],
  "last_date": {
-  "US2Y": "2026-11-20",
+  "US2Y": "2026-11-23",
   "US10Y": "2026-11-23",
   "BUND2Y": "2026-11-23",
   "DXY": "2026-11-23",
@@ -69,7 +69,7 @@
  },
  "source": {
   "US2Y": "treasury",
-  "US10Y": "yahoo:^TNX",
+  "US10Y": "treasury",
   "BUND2Y": "bundesbank_2y",
   "DXY": "yahoo:DX-Y.NYB",
   "EURUSD": "yahoo:EURUSD=X",
