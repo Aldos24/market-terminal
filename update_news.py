@@ -69,6 +69,12 @@ QUERIES: dict[str, tuple[str, str]] = {
 }
 
 
+# Low-signal headline patterns (13F holding changes, auto-generated ratings spam).
+NOISE = re.compile(r"(shares (acquired|sold|bought|purchased) by|position (increased|decreased|raised|lowered|trimmed|cut)|"
+                   r"stock (purchased|acquired|sold) by|stake (in|by)|holdings? (in|of)|has \$[\d.,]+ (million|billion) "
+                   r"(stock|stake|position)|invests \$|buys (new )?shares|sells \d|short interest)", re.I)
+
+
 def is_listed(yahoo: str) -> bool:
     t = yahoo.split("|")[0]
     return bool(t) and not any(c in t for c in "^=") and not t.endswith("-USD")
@@ -88,7 +94,9 @@ def parse_rss(xml: bytes) -> list[dict]:
             d = parsedate_to_datetime(it.findtext("pubDate") or "").astimezone(timezone.utc)
         except Exception:  # noqa: BLE001
             continue
-        if title and link.startswith("http"):
+        if src and title.endswith(" - " + src):
+            title = title[: -len(" - " + src)]
+        if title and link.startswith("http") and not NOISE.search(title):
             items.append({"t": title, "s": src or "Yahoo Finance", "u": link, "d": d})
     return items
 
@@ -113,7 +121,7 @@ def main() -> None:
         if is_listed(a["yahoo"]):
             t = a["yahoo"].split("|")[0]
             got += fetch(f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={quote_plus(t)}&region=US&lang=en-US")
-        lang, q = QUERIES.get(k, ("en", a["name"]))
+        lang, q = QUERIES.get(k, ("en", f'"{a["name"]}" stock'))
         if lang == "ru":
             url = f"https://news.google.com/rss/search?q={quote_plus(q + ' when:7d')}&hl=ru&gl=KZ&ceid=KZ:ru"
         else:
