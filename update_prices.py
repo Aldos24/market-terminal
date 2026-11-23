@@ -1,10 +1,14 @@
 """Daily price pipeline for the market terminal.
 
-Downloads ~13 months of daily closes for every asset in assets.csv
-(Yahoo Finance via yfinance, FRED as fallback for US yields) and writes:
+Downloads ~13 months of daily closes for every asset in assets.csv and writes:
   data/prices.json  - {"updated", "assets": {KEY: {"t": [dates], "c": [closes]}}}
   data/prices.csv   - wide table, one column per asset (for analysis in pandas/Excel)
   data/status.json  - which assets updated, last date per asset, what failed
+
+Sources per asset (assets.csv columns): `treasury` (US Treasury daily par yield
+curve, same-day), `fred` (FRED series, ~1 day lag), `yahoo` (yfinance; several
+tickers may be given as A|B, the first one with data wins). When an asset has
+several sources, the one with the freshest last date is used.
 
 The full window is re-downloaded on every run, so a missed or failed run
 is repaired by the next one. Run locally:  python update_prices.py
@@ -86,31 +90,58 @@ def fred(series_id: str) -> pd.Series | None:
         return None
 
 
+def treasury_curve() -> pd.DataFrame | None:
+    """US Treasury daily par yield curve for the current and previous year."""
+    frames = []
+    year = datetime.now(timezone.utc).year
+    for y in (year - 1, year):
+        url = (f"https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+               f"daily-treasury-rates.csv/{y}/all?type=daily_treasury_yield_curve"
+               f"&field_tdr_date_value={y}&page&_format=csv")
+        try:
+            r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            df = pd.read_csv(io.StringIO(r.text))
+            df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y")
+            frames.append(df.set_index("Date"))
+        except Exception as e:  # noqa: BLE001
+            print(f"  Treasury {y} failed: {e}")
+    return pd.concat(frames).sort_index() if frames else None
+
+
 def main() -> None:
     assets = load_assets()
-    yahoo = [a["yahoo"] for a in assets if a["yahoo"]]
-    print(f"Downloading {len(yahoo)} Yahoo tickers…")
-    got = yahoo_bulk(yahoo)
+    first = [a["yahoo"].split("|")[0] for a in assets if a["yahoo"]]
+    print(f"Downloading {len(first)} Yahoo tickers…")
+    got = yahoo_bulk(first)
 
-    for t in [t for t in yahoo if t not in got]:
-        print(f"Retrying {t} individually…")
-        s = yahoo_single(t)
-        if s is not None:
-            got[t] = s
+    curve = treasury_curve() if any(a.get("treasury") for a in assets) else None
 
     result: dict[str, pd.Series] = {}
     sources: dict[str, str] = {}
     for a in assets:
-        k, y, fr = a["key"], a["yahoo"], a["fred"]
-        s = got.get(y) if y else None
-        src = "yahoo"
-        # Yahoo yield futures can lag or gap: prefer whichever source has the fresher last date.
-        if fr:
-            f = fred(fr)
-            if f is not None and (s is None or f.index.max() > s.index.max()):
-                s, src = f, "fred"
-        if s is not None:
-            result[k], sources[k] = s, src
+        k = a["key"]
+        cands: list[tuple[str, pd.Series]] = []  # in priority order for ties
+        col = a.get("treasury")
+        if col and curve is not None and col in curve:
+            t = clean(curve[col])
+            if len(t) > 5:
+                cands.append(("treasury", t))
+        if a["fred"]:
+            f = fred(a["fred"])
+            if f is not None:
+                cands.append((f"fred:{a['fred']}", f))
+        for tk in [x for x in a["yahoo"].split("|") if x]:
+            s = got.get(tk)
+            if s is None:
+                print(f"Retrying {tk} individually…")
+                s = yahoo_single(tk)
+            if s is not None:
+                cands.append((f"yahoo:{tk}", s))
+                break
+        if cands:
+            best = max(range(len(cands)), key=lambda i: (cands[i][1].index.max(), -i))
+            sources[k], result[k] = cands[best]
 
     OUT.mkdir(exist_ok=True)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -132,7 +163,7 @@ def main() -> None:
         "ok": len(result),
         "total": len(assets),
         "missing": missing,
-        "no_source": [a["key"] for a in assets if not a["yahoo"] and not a["fred"]],
+        "no_source": [a["key"] for a in assets if not (a["yahoo"] or a["fred"] or a.get("treasury"))],
         "last_date": {k: s.index.max().strftime("%Y-%m-%d") for k, s in result.items()},
         "source": sources,
     }
