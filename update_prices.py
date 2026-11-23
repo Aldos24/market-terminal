@@ -109,6 +109,87 @@ def treasury_curve() -> pd.DataFrame | None:
     return pd.concat(frames).sort_index() if frames else None
 
 
+CACHE = ROOT / "data" / "cache"
+UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/124 Safari/537.36"}
+
+
+def nbk_usd() -> pd.Series | None:
+    """Official USD/KZT of the National Bank of Kazakhstan, one XML request per day.
+
+    History is cached in data/cache/nbk_usd.csv so a normal run fetches only the
+    last few days; the first run backfills the whole window.
+    """
+    import xml.etree.ElementTree as ET
+    CACHE.mkdir(parents=True, exist_ok=True)
+    path = CACHE / "nbk_usd.csv"
+    have: dict[str, float] = {}
+    if path.exists():
+        have = {r["date"]: float(r["usd"]) for r in csv.DictReader(open(path, encoding="utf-8"))}
+    today = pd.Timestamp.now(tz="Asia/Almaty").normalize().tz_localize(None)
+    start = today - pd.Timedelta(days=KEEP_DAYS)
+    days = [d for d in pd.date_range(start, today + pd.Timedelta(days=1)) if d.weekday() < 5]
+    recent = set(d.strftime("%Y-%m-%d") for d in days[-4:])  # refresh the last few days every run
+    todo = [d for d in days if d.strftime("%Y-%m-%d") not in have or d.strftime("%Y-%m-%d") in recent]
+    print(f"NBK: fetching {len(todo)} days")
+    for d in todo:
+        try:
+            r = requests.get("https://nationalbank.kz/rss/get_rates.cfm",
+                             params={"fdate": d.strftime("%d.%m.%Y")}, timeout=20, headers=UA)
+            r.raise_for_status()
+            root = ET.fromstring(r.content)
+            if root.findtext("date") != d.strftime("%d.%m.%Y"):
+                continue  # not published yet
+            for it in root.iter("item"):
+                if it.findtext("title") == "USD":
+                    have[d.strftime("%Y-%m-%d")] = float(it.findtext("description"))
+        except Exception as e:  # noqa: BLE001
+            print(f"  NBK {d.date()} failed: {e}")
+        time.sleep(0.15)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "usd"])
+        for k in sorted(have):
+            w.writerow([k, have[k]])
+    if not have:
+        return None
+    return clean(pd.Series(have, dtype=float).rename(index=pd.Timestamp))
+
+
+def bundesbank_2y() -> pd.Series | None:
+    """2-year Bund yield from the Bundesbank term-structure (Svensson) series."""
+    start = (pd.Timestamp.today() - pd.Timedelta(days=KEEP_DAYS + 10)).strftime("%Y-%m-%d")
+    url = ("https://api.statistiken.bundesbank.de/rest/data/BBSIS/"
+           "D.I.ZST.ZI.EUR.S1311.B.A604.R02XX.R.A.A._Z._Z.A")
+    try:
+        r = requests.get(url, params={"format": "csv", "startPeriod": start}, timeout=30, headers=UA)
+        r.raise_for_status()
+        vals = {}
+        for line in r.text.splitlines():
+            parts = line.split(";")
+            if len(parts) >= 2 and len(parts[0]) == 10 and parts[0][4] == "-" and parts[1] not in (".", ""):
+                vals[pd.Timestamp(parts[0])] = float(parts[1].replace(",", "."))
+        s = clean(pd.Series(vals, dtype=float))
+        return s if len(s) > 5 else None
+    except Exception as e:  # noqa: BLE001
+        print(f"  Bundesbank failed: {e}")
+        return None
+
+
+def nbk_base() -> pd.Series | None:
+    """NBK base rate as a business-day step series from manual/nbk_base_rate.csv."""
+    rows = list(csv.DictReader(open(ROOT / "manual" / "nbk_base_rate.csv", encoding="utf-8")))
+    if not rows:
+        return None
+    steps = pd.Series({pd.Timestamp(r["effective_date"]): float(r["rate"]) for r in rows}).sort_index()
+    today = pd.Timestamp.now(tz="Asia/Almaty").normalize().tz_localize(None)
+    idx = pd.bdate_range(today - pd.Timedelta(days=KEEP_DAYS), today)
+    s = steps.reindex(steps.index.union(idx)).ffill().reindex(idx).dropna()
+    return clean(s)
+
+
+SPECIAL = {"nbk_usd": nbk_usd, "bundesbank_2y": bundesbank_2y, "nbk_base": nbk_base}
+
+
 def main() -> None:
     assets = load_assets()
     first = [a["yahoo"].split("|")[0] for a in assets if a["yahoo"]]
@@ -122,6 +203,12 @@ def main() -> None:
     for a in assets:
         k = a["key"]
         cands: list[tuple[str, pd.Series]] = []  # in priority order for ties
+        sp = a.get("special")
+        if sp in SPECIAL:
+            x = SPECIAL[sp]()
+            if x is not None:  # a dedicated official source always wins
+                sources[k], result[k] = sp, x
+                continue
         col = a.get("treasury")
         if col and curve is not None and col in curve:
             t = clean(curve[col])
@@ -163,7 +250,7 @@ def main() -> None:
         "ok": len(result),
         "total": len(assets),
         "missing": missing,
-        "no_source": [a["key"] for a in assets if not (a["yahoo"] or a["fred"] or a.get("treasury"))],
+        "no_source": [a["key"] for a in assets if not (a["yahoo"] or a["fred"] or a.get("treasury") or a.get("special"))],
         "last_date": {k: s.index.max().strftime("%Y-%m-%d") for k, s in result.items()},
         "source": sources,
     }
