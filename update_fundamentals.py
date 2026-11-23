@@ -172,7 +172,7 @@ def main() -> None:
             news = fh("company-news", symbol=t, **{"from": (today - timedelta(days=4)).isoformat(),
                                                     "to": today.isoformat()}) or []
             hints = NAME_HINTS.get(k, [k.lower()]) + [t.lower()]
-            news = [n for n in news if any(h in ((n.get("headline") or "") + " " + (n.get("summary") or "")).lower() for h in hints)]
+            news = [n for n in news if any(h in ((n.get("headline") or "")).lower() for h in hints)]
             companies[k]["news"] = [{"t": n.get("headline", ""), "s": n.get("source", ""), "u": n.get("url", ""),
                                      "d": datetime.fromtimestamp(n.get("datetime", 0), timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
                                      "sum": (n.get("summary") or "")[:400]}
@@ -186,15 +186,36 @@ def main() -> None:
             # quarterly financials as reported to the SEC (via Finnhub)
             fr = fh("stock/financials-reported", symbol=t, freq="quarterly") or {}
             rows = []
-            for rep in (fr.get("data") or [])[:8]:
+            for rep in (fr.get("data") or [])[:9]:
                 ic = {(x.get("concept") or "").split("_")[-1]: x.get("value") for x in (rep.get("report") or {}).get("ic") or []}
                 rev = next((ic[c] for c in REV_CONCEPTS if ic.get(c) is not None), None)
-                rows.append({"period": f"{rep.get('year')}Q{rep.get('quarter')}", "end": (rep.get("endDate") or "")[:10],
+                rows.append({"y": rep.get("year"), "q": rep.get("quarter"), "start": (rep.get("startDate") or "")[:10],
+                             "period": f"{rep.get('year')}Q{rep.get('quarter')}", "end": (rep.get("endDate") or "")[:10],
                              "form": rep.get("form"), "filed": (rep.get("filedDate") or "")[:10],
                              "rev": rev, "ni": ic.get("NetIncomeLoss") or ic.get("ProfitLoss"),
                              "eps": ic.get("EarningsPerShareDiluted")})
-            if rows:
-                companies[k]["fin"] = list(reversed(rows))
+            rows = list(reversed(rows))
+            # 10-Q income statements are often year-to-date: subtract the previous quarter of the same fiscal year
+            for i in range(len(rows) - 1, 0, -1):
+                a, b = rows[i], rows[i - 1]
+                ytd = a["start"] and a["start"] == b["start"]
+                if ytd and a["y"] == b["y"] and a["q"] == (b["q"] or 0) + 1:
+                    for f in ("rev", "ni"):
+                        if a[f] is not None and b[f] is not None:
+                            a[f] = a[f] - b[f]
+                    a["eps"] = None  # per-share YTD figures can't be split reliably
+                    a["split"] = True
+
+            def is_quarter(r):
+                try:
+                    days = (date.fromisoformat(r["end"]) - date.fromisoformat(r["start"])).days
+                except ValueError:
+                    return True
+                return days < 100 or r.get("split")
+            rows = [r for r in rows if is_quarter(r)]
+            fin = [{x: r[x] for x in ("period", "end", "form", "filed", "rev", "ni", "eps")} for r in rows]
+            if fin:
+                companies[k]["fin"] = fin[-8:]
         calendar.sort(key=lambda x: x["date"] or "")
 
     if FMP:
