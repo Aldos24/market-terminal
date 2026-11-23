@@ -29,7 +29,7 @@ DAYS, PER_ASSET = 14, 15
 # Google News queries: (language, query). Assets not listed use their name.
 QUERIES: dict[str, tuple[str, str]] = {
     "US2Y": ("en", "2-year Treasury yield"),
-    "US10Y": ("en", "10-year Treasury yield"),
+    "US10Y": ("en", "Treasury yields 10-year"),
     "BUND2Y": ("en", "German bund yields"),
     "DXY": ("en", "dollar index DXY"),
     "EURUSD": ("en", "euro dollar EUR/USD"),
