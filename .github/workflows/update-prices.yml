@@ -25,6 +25,9 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python update_prices.py
+      - name: Headlines
+        run: python update_news.py
+        continue-on-error: true
       - name: Commit data
         run: |
           git config user.name "market-bot"
