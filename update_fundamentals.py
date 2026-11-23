@@ -37,6 +37,13 @@ STOCKS = {
     "ANET": "ANET", "ETN": "ETN", "VRT": "VRT", "CEG": "CEG", "NEE": "NEE", "CRWV": "CRWV",
     "PLTR": "PLTR", "KSPI": "KSPI", "FRHC": "FRHC", "MLI": "MLI", "LII": "LII", "WTS": "WTS",
 }
+# words that must appear in a headline/summary for company news to count
+NAME_HINTS = {"NVDA": ["nvidia"], "AVGO": ["broadcom"], "AMD": ["amd", "advanced micro"], "TSM": ["tsmc", "taiwan semi"],
+    "ASML": ["asml"], "MU": ["micron"], "MSFT": ["microsoft"], "GOOGL": ["google", "alphabet"], "AMZN": ["amazon", "aws"],
+    "META": ["meta", "facebook", "instagram"], "ORCL": ["oracle"], "AAPL": ["apple", "iphone"], "ANET": ["arista"],
+    "ETN": ["eaton"], "VRT": ["vertiv"], "CEG": ["constellation"], "NEE": ["nextera", "fpl"], "CRWV": ["coreweave"],
+    "PLTR": ["palantir"], "KSPI": ["kaspi"], "FRHC": ["freedom"], "MLI": ["mueller"], "LII": ["lennox"], "WTS": ["watts"]}
+REV_CONCEPTS = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet", "RevenueFromContractWithCustomerIncludingAssessedTax"]
 REV_TAGS = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"]
 
 
@@ -164,10 +171,30 @@ def main() -> None:
                 status["finnhub"] += 1
             news = fh("company-news", symbol=t, **{"from": (today - timedelta(days=4)).isoformat(),
                                                     "to": today.isoformat()}) or []
+            hints = NAME_HINTS.get(k, [k.lower()]) + [t.lower()]
+            news = [n for n in news if any(h in ((n.get("headline") or "") + " " + (n.get("summary") or "")).lower() for h in hints)]
             companies[k]["news"] = [{"t": n.get("headline", ""), "s": n.get("source", ""), "u": n.get("url", ""),
                                      "d": datetime.fromtimestamp(n.get("datetime", 0), timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
                                      "sum": (n.get("summary") or "")[:400]}
                                     for n in news[:8] if n.get("url", "").startswith("http")]
+            # EPS history: actual vs consensus (last 4 quarters)
+            er = fh("stock/earnings", symbol=t) or []
+            if isinstance(er, list) and er:
+                companies[k]["eps_hist"] = [{"period": e.get("period"), "q": e.get("quarter"), "y": e.get("year"),
+                                             "act": e.get("actual"), "est": e.get("estimate"),
+                                             "surp": e.get("surprisePercent")} for e in er[:4]]
+            # quarterly financials as reported to the SEC (via Finnhub)
+            fr = fh("stock/financials-reported", symbol=t, freq="quarterly") or {}
+            rows = []
+            for rep in (fr.get("data") or [])[:8]:
+                ic = {(x.get("concept") or "").split("_")[-1]: x.get("value") for x in (rep.get("report") or {}).get("ic") or []}
+                rev = next((ic[c] for c in REV_CONCEPTS if ic.get(c) is not None), None)
+                rows.append({"period": f"{rep.get('year')}Q{rep.get('quarter')}", "end": (rep.get("endDate") or "")[:10],
+                             "form": rep.get("form"), "filed": (rep.get("filedDate") or "")[:10],
+                             "rev": rev, "ni": ic.get("NetIncomeLoss") or ic.get("ProfitLoss"),
+                             "eps": ic.get("EarningsPerShareDiluted")})
+            if rows:
+                companies[k]["fin"] = list(reversed(rows))
         calendar.sort(key=lambda x: x["date"] or "")
 
     if FMP:
