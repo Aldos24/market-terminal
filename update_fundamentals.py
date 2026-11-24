@@ -22,7 +22,8 @@ import requests
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "data" / "fundamentals.json"
 FINNHUB = os.environ.get("FINNHUB_KEY", "").strip()
-FMP = os.environ.get("FMP_KEY", "").strip()
+FMP = ""  # FMP quarterly statements need a paid plan; kept for later
+FMP_KEY_SET = bool(os.environ.get("FMP_KEY", "").strip())
 SEC_UA = {"User-Agent": "Aldiyar Berik Aldos24@users.noreply.github.com", "Accept-Encoding": "gzip, deflate"}
 # fallback CIKs; each is verified against the tickers listed in SEC submissions
 CIK_FALLBACK = {"NVDA": 1045810, "AVGO": 1730168, "AMD": 2488, "TSM": 1046179, "ASML": 937966, "MU": 723125,
@@ -116,7 +117,7 @@ def fh(path: str, **params):
     if not FINNHUB:
         return None
     res = get(f"https://finnhub.io/api/v1/{path}", params={**params, "token": FINNHUB})
-    time.sleep(1.1)  # free tier: 60 calls/min
+    time.sleep(1.25)  # free tier: 60 calls/min
     return res
 
 
@@ -161,6 +162,7 @@ def main() -> None:
                                  "eps_est": e.get("epsEstimate"), "eps_act": e.get("epsActual"),
                                  "rev_est": e.get("revenueEstimate"), "rev_act": e.get("revenueActual")})
         for k, t in STOCKS.items():
+            print(f"  finnhub {k} {datetime.now(timezone.utc):%H:%M:%S}")
             m = fh("stock/metric", symbol=t, metric="all") or {}
             mm = m.get("metric") or {}
             keep = ["peTTM", "psTTM", "pbAnnual", "marketCapitalization", "netProfitMarginTTM",
