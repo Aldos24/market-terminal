@@ -4,6 +4,9 @@ on:
   schedule:
     # 23:30 UTC Mon–Fri = 04:30 Almaty Tue–Sat, after the New York close
     - cron: "30 23 * * 1-5"
+    # backups: GitHub sometimes delays or drops scheduled runs; re-running is harmless
+    - cron: "17 0 * * 2-6"
+    - cron: "41 1 * * 2-6"
   workflow_dispatch:
 
 permissions:
